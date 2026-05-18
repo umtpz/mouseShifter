@@ -1,0 +1,26 @@
+{
+  "65658": {
+    "raw_id": "\\\\?\\HID#VID_046D&PID_C547&MI_00#9&3899e14a&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}",
+    "name": "Logitech G502X",
+    "speed": 3,
+    "accel": false,
+    "default_speed": 3,
+    "default_accel": false
+  },
+  "131192": {
+    "raw_id": "\\\\?\\HID#VID_046D&PID_C52B&MI_01&Col01#9&bfebfe8&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}",
+    "name": "Logitech K400+",
+    "speed": 18,
+    "accel": true,
+    "default_speed": 15,
+    "default_accel": false
+  },
+  "65662": {
+    "raw_id": "\\\\?\\HID#VID_046D&PID_C52B&MI_01&Col01#8&39b5f074&0&0000#{378de44c-56ef-11d1-bc8c-00a0c91405dd}",
+    "name": "Logitech Master 3",
+    "speed": 15,
+    "accel": false,
+    "default_speed": 15,
+    "default_accel": false
+  }
+}
