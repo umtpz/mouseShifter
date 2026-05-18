@@ -31,6 +31,39 @@ ACCH     = "#f09030"
 MONO     = "Consolas"
 
 # ──────────────────────────────────────────────────────────────────────────────
+#  Locale
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _is_turkish() -> bool:
+    try:
+        import ctypes as _ct
+        lang = _ct.windll.kernel32.GetUserDefaultUILanguage()
+        return (lang & 0xFF) == 0x1F  # 0x1F = Turkish primary language ID
+    except Exception:
+        return False
+
+_TR = _is_turkish()
+
+def _t(tr: str, en: str) -> str:
+    return tr if _TR else en
+
+S = {
+    "placeholder":   _t("isim ver…",           "rename…"),
+    "sensitivity":   _t("HASSASİYET",           "SENSITIVITY"),
+    "accel":         _t("MOUSE İVMESİ",         "ACCELERATION"),
+    "default":       _t("Varsayılan",           "Default"),
+    "on":            _t("Açık",                 "On"),
+    "off":           _t("Kapalı",               "Off"),
+    "startup":       _t("Başlangıçta Çalıştır", "Run at Startup"),
+    "waiting":       _t("Fare bekleniyor…",     "Waiting for mouse…"),
+    "active":        _t("Aktif",                "Active"),
+    "sys_speed":     _t("Sistem Hızı",          "System Speed"),
+    "ivme":          _t("İvme",                 "Accel"),
+    "open":          _t("Aç",                   "Open"),
+    "quit":          _t("Çıkış",                "Quit"),
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 #  Persistence
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -242,7 +275,7 @@ class DeviceCard(ctk.CTkFrame):
             self, textvariable=self._name_var,
             font=ctk.CTkFont(family=MONO, size=13, weight="bold"),
             fg_color=CARD2, border_color=BORDER, border_width=1,
-            text_color=TEXT, placeholder_text="isim ver…",
+            text_color=TEXT, placeholder_text=S["placeholder"],
             placeholder_text_color=SUBT, height=32, corner_radius=4)
         name_entry.pack(fill="x", padx=14, pady=(4, 0))
 
@@ -252,7 +285,7 @@ class DeviceCard(ctk.CTkFrame):
         # ── Sensitivity ────────────────────────────────────────────────────────
         sens_hdr = ctk.CTkFrame(self, fg_color="transparent")
         sens_hdr.pack(fill="x", padx=14, pady=(10, 0))
-        self._lbl(sens_hdr, "HASSASİYET", size=11, color=SUBT).pack(side="left")
+        self._lbl(sens_hdr, S["sensitivity"], size=11, color=SUBT).pack(side="left")
 
         self._sens_val_lbl = self._lbl(
             sens_hdr, f"{self.dev.speed} / 20",
@@ -268,7 +301,7 @@ class DeviceCard(ctk.CTkFrame):
             command=self._on_slider)
         self._slider.pack(fill="x", padx=14, pady=(6, 0))
 
-        self._def_s_lbl = self._lbl(self, f"Varsayılan: {self.dev.default_speed}",
+        self._def_s_lbl = self._lbl(self, f"{S["default"]}: {self.dev.default_speed}",
                                     size=11, color="#666666")
         self._def_s_lbl.pack(fill="x", padx=14, pady=(3, 0))
 
@@ -279,7 +312,7 @@ class DeviceCard(ctk.CTkFrame):
         accel_row = ctk.CTkFrame(self, fg_color="transparent")
         accel_row.pack(fill="x", padx=14, pady=(10, 14))
 
-        self._lbl(accel_row, "MOUSE İVMESİ", size=11, color=SUBT).pack(side="left")
+        self._lbl(accel_row, S["accel"], size=11, color=SUBT).pack(side="left")
 
         self._accel_var = ctk.BooleanVar(value=self.dev.accel)
         self._accel_sw = ctk.CTkSwitch(
@@ -292,13 +325,13 @@ class DeviceCard(ctk.CTkFrame):
 
         self._accel_lbl = self._lbl(
             accel_row,
-            "Açık" if self.dev.accel else "Kapalı",
+            S["on"] if self.dev.accel else S["off"],
             size=11, color=ACCENT if self.dev.accel else SUBT)
         self._accel_lbl.pack(side="right", padx=(0, 8))
 
         self._def_a_lbl = self._lbl(
             self,
-            f"Varsayılan: {'Açık' if self.dev.default_accel else 'Kapalı'}",
+            f"{S['default']}: {S['on'] if self.dev.default_accel else S['off']}",
             size=11, color="#666666")
         self._def_a_lbl.pack(fill="x", padx=14, pady=(0, 0))
 
@@ -343,7 +376,7 @@ class DeviceCard(ctk.CTkFrame):
         on = self._accel_var.get()
         self.dev.accel = on
         self._accel_lbl.configure(
-            text="Açık" if on else "Kapalı",
+            text=S["on"] if on else S["off"],
             text_color=ACCENT if on else SUBT)
         self._schedule(120, self._commit)
 
@@ -450,7 +483,7 @@ class App(ctk.CTk):
         startup_row.pack(side="left", padx=(12, 0))
         self._startup_var = tk.BooleanVar(value=self._get_startup())
         ctk.CTkCheckBox(
-            startup_row, text="Başlangıçta Çalıştır",
+            startup_row, text=S["startup"],
             variable=self._startup_var,
             font=ctk.CTkFont(family=MONO, size=11),
             text_color=SUBT,
@@ -463,7 +496,7 @@ class App(ctk.CTk):
 
         # right — active status
         self._stat_lbl = ctk.CTkLabel(
-            ftr, text="Fare bekleniyor…",
+            ftr, text=S["waiting"],
             font=ctk.CTkFont(family=MONO, size=11),
             text_color=SUBT)
         self._stat_lbl.pack(side="right", padx=(4, 8))
@@ -507,7 +540,7 @@ class App(ctk.CTk):
             self._last_active = None
             if hasattr(self, "_stat_dot"):
                 self._stat_dot.configure(text_color=SUBT)
-                self._stat_lbl.configure(text="Fare bekleniyor…", text_color=SUBT)
+                self._stat_lbl.configure(text=S["waiting"], text_color=SUBT)
 
     def _reflow_cards(self):
         for card in self._cards.values():
@@ -554,8 +587,8 @@ class App(ctk.CTk):
     # ── Footer ────────────────────────────────────────────────────────────────
     def _refresh_footer(self):
         self._footer_lbl.configure(
-            text=f"Sistem Hızı: {win_get_speed()}/20"
-                 f"   İvme: {'Açık' if win_get_accel() else 'Kapalı'}")
+            text=f"{S['sys_speed']}: {win_get_speed()}/20"
+                 f"   {S['ivme']}: {S['on'] if win_get_accel() else S['off']}")
 
     # ── Startup ───────────────────────────────────────────────────────────────
     _STARTUP_KEY  = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -600,9 +633,9 @@ class App(ctk.CTk):
 
     def _start_tray(self):
         menu = pystray.Menu(
-            pystray.MenuItem("Aç",   self._show_window, default=True),
+            pystray.MenuItem(S["open"],   self._show_window, default=True),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Çıkış", self._quit),
+            pystray.MenuItem(S["quit"], self._quit),
         )
         self._tray = pystray.Icon(
             "MouseShifter", self._make_tray_image(), "MouseShifter", menu)
@@ -657,7 +690,7 @@ class App(ctk.CTk):
                 for h, c in self._cards.items():
                     c.set_active(h == last_handle)
                 self._stat_dot.configure(text_color="#4caf7a")
-                self._stat_lbl.configure(text=f"Aktif  →  {dev.name}", text_color=TEXT)
+                self._stat_lbl.configure(text=f"{S["active"]}  →  {dev.name}", text_color=TEXT)
                 self._refresh_footer()
                 self._save()
 
@@ -668,5 +701,3 @@ class App(ctk.CTk):
 if __name__ == "__main__":
     threading.Thread(target=_raw_thread, daemon=True).start()
     App().mainloop()
-
-# pyinstaller --onefile --windowed --icon=icon.ico --name=MouseShifter main.py
