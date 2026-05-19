@@ -186,7 +186,12 @@ S = {
 #  Persistence
 # ──────────────────────────────────────────────────────────────────────────────
 
-DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "devices.json")
+if getattr(sys, 'frozen', False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+DATA_FILE = os.path.join(_BASE_DIR, "devices.json")
 
 def load_saved() -> dict:
     try:
@@ -587,7 +592,7 @@ TOP_PAD = 18      # extra top padding so cards start 6px lower
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("MouseShifter")
+        self.title("MouseShifter v1.1.0@umtpz")
         self.resizable(False, False)
         self.configure(fg_color=BG)
         self._set_icon()
@@ -642,7 +647,7 @@ class App(ctk.CTk):
         d.line([14, 32, 50, 32], fill="#4caf7a", width=1)
         d.rounded_rectangle([12,  4, 52, 60], radius=16, outline="#33aa6644", width=1)
 
-        ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+        ico_path = os.path.join(_BASE_DIR, "icon.ico")
         img.save(ico_path, format="ICO", sizes=[(64, 64), (32, 32), (16, 16)])
         self.iconbitmap(ico_path)
 
