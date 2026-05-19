@@ -12,6 +12,124 @@ from PIL import Image, ImageDraw
 import pystray
 
 # ──────────────────────────────────────────────────────────────────────────────
+#  Audio API  (pure registry + comtypes IPolicyConfig)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_AUDIO_BASE = r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Render"
+_AUDIO_FLAGS = winreg.KEY_READ | winreg.KEY_WOW64_64KEY
+
+def audio_get_devices() -> list[dict]:
+    devs = []
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _AUDIO_BASE, 0, _AUDIO_FLAGS)
+        i = 0
+        while True:
+            try:
+                guid = winreg.EnumKey(root, i); i += 1
+                sub = winreg.OpenKey(root, guid, 0, _AUDIO_FLAGS)
+                try:
+                    state, _ = winreg.QueryValueEx(sub, "DeviceState")
+                    if state == 1:
+                        prop = winreg.OpenKey(sub, "Properties", 0, _AUDIO_FLAGS)
+                        try:
+                            name, _ = winreg.QueryValueEx(
+                                prop, "{a45c254e-df1c-4efd-8020-67d146a850e0},14")
+                        except Exception:
+                            try:
+                                name, _ = winreg.QueryValueEx(
+                                    prop, "{a45c254e-df1c-4efd-8020-67d146a850e0},2")
+                            except Exception:
+                                name = guid
+                        winreg.CloseKey(prop)
+                        clean_guid = guid.strip("{}")
+                        devs.append({"name": name,
+                                     "id": "{0.0.0.00000000}.{" + clean_guid + "}"})
+                finally:
+                    winreg.CloseKey(sub)
+            except OSError:
+                break
+        winreg.CloseKey(root)
+    except Exception as e:
+        print(f"audio_get_devices error: {e}")
+    return devs
+
+def audio_get_default_id() -> str:
+    """Read default device id from the {24dbb0fc-...},0 property of any active device."""
+    try:
+        root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _AUDIO_BASE, 0, _AUDIO_FLAGS)
+        i = 0
+        while True:
+            try:
+                guid = winreg.EnumKey(root, i); i += 1
+                sub = winreg.OpenKey(root, guid, 0, _AUDIO_FLAGS)
+                try:
+                    state, _ = winreg.QueryValueEx(sub, "DeviceState")
+                    if state == 1:
+                        prop = winreg.OpenKey(sub, "Properties", 0, _AUDIO_FLAGS)
+                        try:
+                            val, _ = winreg.QueryValueEx(
+                                prop, "{24dbb0fc-9311-4b3d-9cf0-18ff155639d4},0")
+                            winreg.CloseKey(prop)
+                            winreg.CloseKey(sub)
+                            winreg.CloseKey(root)
+                            return val   # e.g. "{0.0.0.00000000}.{guid}"
+                        except Exception:
+                            winreg.CloseKey(prop)
+                finally:
+                    winreg.CloseKey(sub)
+            except OSError:
+                break
+        winreg.CloseKey(root)
+    except Exception:
+        pass
+    devs = audio_get_devices()
+    return devs[0]["id"] if devs else ""
+
+_last_audio_id: str = ""
+
+def audio_set_default(device_id: str):
+    global _last_audio_id
+    if not device_id or device_id == _last_audio_id:
+        return
+    _last_audio_id = device_id
+    try:
+        import subprocess
+        cs_code = r"""
+using System.Runtime.InteropServices;
+[Guid("F8679F50-850A-41CF-9C72-430F290290C8")]
+[InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IPolicyConfig {
+    void GetMixFormat(); void GetDeviceFormat(); void ResetDeviceFormat();
+    void SetDeviceFormat(); void GetProcessingPeriod(); void SetProcessingPeriod();
+    void GetShareMode(); void SetShareMode(); void GetPropertyValue();
+    void SetPropertyValue();
+    [PreserveSig] int SetDefaultEndpoint([MarshalAs(UnmanagedType.LPWStr)] string deviceId, uint role);
+    void SetEndpointVisibility();
+}
+[ComImport, Guid("870AF99C-171D-4F9E-AF0D-E63DF40C2BC9")]
+[ClassInterface(ClassInterfaceType.None)]
+class PolicyConfigClient {}
+public class AudioSwitcher {
+    public static void SetDefault(string id) {
+        try {
+            var cfg = (IPolicyConfig)new PolicyConfigClient();
+            cfg.SetDefaultEndpoint(id, 0);
+            cfg.SetDefaultEndpoint(id, 1);
+            cfg.SetDefaultEndpoint(id, 2);
+        } catch {}
+    }
+}
+"""
+        safe_id = device_id.replace("'", "''")
+        script = f"Add-Type -TypeDefinition @'\n{cs_code}\n'@\n[AudioSwitcher]::SetDefault('{safe_id}')"
+        subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", script],
+            capture_output=True, timeout=8,
+            creationflags=subprocess.CREATE_NO_WINDOW)
+    except Exception as e:
+        print(f"audio_set_default error: {e}")
+
+# ──────────────────────────────────────────────────────────────────────────────
 #  Theme
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -61,6 +179,7 @@ S = {
     "ivme":          _t("İvme",                 "Accel"),
     "open":          _t("Aç",                   "Open"),
     "quit":          _t("Çıkış",                "Quit"),
+    "audio":         _t("SES CİHAZI",           "AUDIO DEVICE"),
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -86,6 +205,7 @@ def save_all(devices: dict):
             "accel":         dev.accel,
             "default_speed": dev.default_speed,
             "default_accel": dev.default_accel,
+            "audio_device":  dev.audio_device,
         }
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -176,16 +296,25 @@ class Device:
             self.default_accel = saved.get("default_accel", cur_accel)
             self.speed         = saved.get("speed", self.default_speed)
             self.accel         = saved.get("accel", self.default_accel)
+            audio              = saved.get("audio_device", audio_get_default_id())
+            # fix legacy double-brace IDs e.g. {0.0.0.00000000}.{{guid}} → {0.0.0.00000000}.{guid}
+            self.audio_device  = audio.replace("{{", "{").replace("}}", "}")
         else:
             self.name          = registry_name(raw_id)
             self.default_speed = cur_speed
             self.default_accel = cur_accel
             self.speed         = cur_speed
             self.accel         = cur_accel
+            self.audio_device  = audio_get_default_id()
 
     def apply(self):
         win_set_speed(self.speed)
         win_set_accel(self.accel)
+        if self.audio_device:
+            threading.Thread(
+                target=audio_set_default,
+                args=(self.audio_device,),
+                daemon=True).start()
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  Shared state
@@ -335,6 +464,45 @@ class DeviceCard(ctk.CTkFrame):
             size=11, color="#666666")
         self._def_a_lbl.pack(fill="x", padx=14, pady=(0, 0))
 
+        # ── Divider ────────────────────────────────────────────────────────────
+        tk.Frame(self, bg="#292929", height=1).pack(fill="x", padx=14, pady=(10, 0))
+
+        # ── Audio Device ───────────────────────────────────────────────────────
+        audio_hdr = ctk.CTkFrame(self, fg_color="transparent")
+        audio_hdr.pack(fill="x", padx=14, pady=(10, 4))
+        self._lbl(audio_hdr, S["audio"], size=11, color=SUBT).pack(side="left")
+
+        audio_devs        = audio_get_devices()
+        self._audio_map   = {d["name"]: d["id"] for d in audio_devs}
+        self._audio_id_to_name = {d["id"]: d["name"] for d in audio_devs}
+
+        # If saved device is not currently connected, show it as "(bağlı değil)"
+        saved_id   = self.dev.audio_device
+        saved_name = self._audio_id_to_name.get(saved_id)
+        unavailable_label = None
+        if saved_id and not saved_name:
+            unavailable_label = f"{saved_id[-36:].strip('{}').split('-')[0]}… ({_t('bağlı değil', 'disconnected')})"
+            saved_name = unavailable_label
+            self._audio_map[unavailable_label] = saved_id
+
+        audio_names = [d["name"] for d in audio_devs]
+        if unavailable_label:
+            audio_names = [unavailable_label] + audio_names
+
+        cur_name = saved_name or (audio_names[0] if audio_names else "—")
+
+        self._audio_combo = ctk.CTkComboBox(
+            self, values=audio_names or ["—"],
+            font=ctk.CTkFont(family=MONO, size=10),
+            fg_color=CARD2, border_color=BORDER, border_width=1,
+            button_color=BORDER, button_hover_color=ACCENT,
+            dropdown_fg_color=CARD2, dropdown_text_color=TEXT,
+            text_color=(SUBT if unavailable_label and cur_name == unavailable_label else TEXT),
+            height=28, corner_radius=4,
+            command=self._on_audio)
+        self._audio_combo.set(cur_name)
+        self._audio_combo.pack(fill="x", padx=14, pady=(0, 0))
+
         # ── Remove button (bottom-right) ───────────────────────────────────────
         btn_row = ctk.CTkFrame(self, fg_color="transparent")
         btn_row.pack(fill="x", padx=14, pady=(6, 12))
@@ -379,6 +547,19 @@ class DeviceCard(ctk.CTkFrame):
             text=S["on"] if on else S["off"],
             text_color=ACCENT if on else SUBT)
         self._schedule(120, self._commit)
+
+    def _on_audio(self, name: str):
+        dev_id = self._audio_map.get(name, "")
+        if not dev_id:
+            return
+        self.dev.audio_device = dev_id
+        # If user picked a real device, remove the disconnected placeholder
+        current_values = list(self._audio_combo.cget("values"))
+        new_values = [v for v in current_values
+                      if not (_t("bağlı değil", "disconnected") in v and v != name)]
+        if new_values != current_values:
+            self._audio_combo.configure(values=new_values, text_color=TEXT)
+        self._schedule(200, self._commit)
 
     def _schedule(self, ms: int, fn):
         if self._deb:
